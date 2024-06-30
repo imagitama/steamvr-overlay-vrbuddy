@@ -8,28 +8,35 @@ using System.Threading.Tasks;
 using Valve.VR;
 using Newtonsoft.Json;
 using System.Runtime.Loader;
+using SharpDX;
 
 namespace VRBuddy
 {
     class Program
     {
         const string filePath = "settings.json";
+        static Settings settings;
+        static float moveAmount = 0.05f;
+        static float rotateAmount = 0.05f;
 
         static async Task Main(string[] args)
         {
             Console.WriteLine("Welcome to VR Buddy!");
         
-            Settings settings = new Settings() {
+            settings = new Settings() {
                 InboundPort = 5000,
                 OutboundPort = 5000,
                 Scale = 0.5f,
                 HeadScale = 1f,
                 HandScale = 1f,
+                SendData = true,
+                ReceiveData = true,
                 Offset = new Transform() {
-                    Position = new Vector3(0, 0, 0),
-                    Rotation = new Quaternion(0, 0, 0, 0),
+                    Position = new SimpleVector3(1f, 0, -1f),
+                    Rotation = new SimpleQuaternion(0, 0, 0, 0),
                 },
-                Debug = true
+                LookAtPlayer = false,
+                Debug = false
             };
 
             bool askForSettings = true;
@@ -68,14 +75,8 @@ namespace VRBuddy
                     settings.Offset = new Transform();
                 }
 
-                settings.Offset.Position.x = Input.GetInputFloat("Enter the render offset position X (where 1 is 1m to right, -1 is 1m to left)", settings.Offset.Position.x, 1f);
-                settings.Offset.Position.y = Input.GetInputFloat("Enter the render offset position Y (where 1 is 1m forwards, -1 is 1m backwards)", settings.Offset.Position.y, 0f);
-                settings.Offset.Position.z = Input.GetInputFloat("Enter the render offset position Z (where 1 is 1m in the air, -1 is 1m in the ground)", settings.Offset.Position.z, 0f);
-                settings.Offset.Rotation.x = Input.GetInputFloat("Enter the render offset rotation X (where 1 is facing left/right)", settings.Offset.Rotation.x, 0f);
-                settings.Offset.Rotation.y = Input.GetInputFloat("Enter the render offset rotation Y (where 1 is tilt forwards/backwards)", settings.Offset.Rotation.y, 0f);
-                settings.Offset.Rotation.z = Input.GetInputFloat("Enter the render offset rotation Z (where 1 is ear to ground)", settings.Offset.Rotation.z, 0f);
-
-                settings.LookAtPlayer = Input.GetInputBool("Make overlays look directly at you", settings.LookAtPlayer, true);
+                // TODO
+                // settings.LookAtPlayer = Input.GetInputBool("Make overlays look directly at you", settings.LookAtPlayer, false);
 
                 Console.WriteLine("New settings:");
                 OutputSettings(settings);
@@ -89,8 +90,7 @@ namespace VRBuddy
                     return;
                 }
                 
-                string newJson = JsonConvert.SerializeObject(settings, Formatting.Indented);
-                File.WriteAllText(filePath, newJson);
+                SaveSettingsToFile();
 
                 Console.WriteLine("New settings saved");
             }
@@ -108,19 +108,31 @@ namespace VRBuddy
                 }
             }
 
+            Console.WriteLine("");
+            Console.WriteLine("  Use numpad to adjust offsets:");
+            Console.WriteLine("  7     8     9         7: Backward      8: Up             9: Forward");
+            Console.WriteLine("  4     5     6         4: Left          5: Reset          6: Right");
+            Console.WriteLine("  1     2     3         1: Rotate Down   2: Down           3: Rotate Up");
+            Console.WriteLine("  0           .         0: (not used)                      .: Rotate Right");
+            Console.WriteLine("  -     +     *         -: Rotate Left   +: Rotate Right   *: Rotate Down");
+            Console.WriteLine("");
+            Console.WriteLine("  Press Spacebar to toggle debugging8");
+            Console.WriteLine("");
+
             // VirtualPlayspace virtualPlayspace = new VirtualPlayspace();
             // var render = settings.VirtualPlayspace ? new RenderNonVR(settings, virtualPlayspace) : new Render(settings);
 
-            var render = new Render(settings);
+            var render = new Render(ref settings);
 
-            var senderTask = settings.SendData ? Task.Run(() => StartSender(settings)) : Task.CompletedTask;
-            var receiverTask = settings.ReceiveData ? Task.Run(() => StartReceiver(settings, ref render)) : Task.CompletedTask;
+            var senderTask = settings.SendData ? Task.Run(() => StartSender(ref settings)) : Task.CompletedTask;
+            var receiverTask = settings.ReceiveData ? Task.Run(() => StartReceiver(ref settings, ref render)) : Task.CompletedTask;
+            var inputTask = HandleUserInput();
 
             if (settings.VirtualPlayspace) {
                 // must be run on main thread
                 // virtualPlayspace.Start();
             } else {
-                await Task.WhenAll(senderTask, receiverTask);
+                await Task.WhenAll(senderTask, receiverTask, inputTask);
             }
 
             OpenVR.Shutdown();
@@ -134,23 +146,78 @@ namespace VRBuddy
             Console.WriteLine($"  Global Scale: {settings.Scale}m");
             Console.WriteLine($"  Head Scale: {settings.HeadScale}x");
             Console.WriteLine($"  Hand Scale: {settings.HandScale}x");
-            Console.WriteLine($"  Render Offset Position: X={settings.Offset.Position.x}, Y={settings.Offset.Position.y}, Z={settings.Offset.Position.z}");
-            Console.WriteLine($"  Render Offset Rotation: X={settings.Offset.Rotation.x}, Y={settings.Offset.Rotation.y}, Z={settings.Offset.Rotation.z}");
+            Console.WriteLine($"  Render Offset Position: X={settings.Offset.Position.X}, Y={settings.Offset.Position.Y}, Z={settings.Offset.Position.Z}");
+            Console.WriteLine($"  Render Offset Rotation: X={settings.Offset.Rotation.X}, Y={settings.Offset.Rotation.Y}, Z={settings.Offset.Rotation.Z}");
             Console.WriteLine($"  Sending: {(settings.SendData ? "Yes" : "No")}");
             Console.WriteLine($"  Receiving: {(settings.ReceiveData ? "Yes" : "No")}");
             Console.WriteLine($"  Look At You: {(settings.LookAtPlayer ? "Yes" : "No")}");
         }
 
-        static void StartSender(Settings settings)
+        static void StartSender(ref Settings settings)
         {
             Console.WriteLine("Starting to send data...");
-            var sender = new Sender(settings);
+            var sender = new Sender(ref settings);
         }
 
-        static void StartReceiver(Settings settings, ref Render render)
+        static void StartReceiver(ref Settings settings, ref Render render)
         {
             Console.WriteLine("Starting to receive data...");
-            var receiver = new Receiver(settings, ref render);
+            var receiver = new Receiver(ref settings, ref render);
+        }
+
+        static async Task HandleUserInput()
+        {
+            ConsoleKey key;
+            do
+            {
+                key = Console.ReadKey(true).Key;
+                UpdateSettingsWithKey(key);
+                await Task.Delay(100);
+            } while (key != ConsoleKey.Escape);
+        }
+
+        static void UpdateSettingsWithKey(ConsoleKey key)
+        {
+            if (settings.Debug) {
+                Console.Write($" {key.ToString()}");
+            }
+
+            switch (key)
+            {
+                case ConsoleKey.NumPad5: ResetOffset(); break;
+
+                case ConsoleKey.NumPad8: settings.Offset.Position.Y += moveAmount; break;
+                case ConsoleKey.NumPad2: settings.Offset.Position.Y -= moveAmount; break;
+                case ConsoleKey.NumPad4: settings.Offset.Position.X -= moveAmount; break;
+                case ConsoleKey.NumPad6: settings.Offset.Position.X += moveAmount; break;
+                case ConsoleKey.NumPad7: settings.Offset.Position.Z -= moveAmount; break;
+                case ConsoleKey.NumPad9: settings.Offset.Position.Z += moveAmount; break;
+
+                case ConsoleKey.NumPad1: settings.Offset.Rotation.X -= rotateAmount; break;
+                case ConsoleKey.NumPad3: settings.Offset.Rotation.X += rotateAmount; break;
+                case ConsoleKey.Subtract: settings.Offset.Rotation.Y -= rotateAmount; break;
+                case ConsoleKey.Add: settings.Offset.Rotation.Y += rotateAmount; break;
+                case ConsoleKey.Multiply: settings.Offset.Rotation.Z -= rotateAmount; break;
+                case ConsoleKey.Decimal: settings.Offset.Rotation.Z += rotateAmount; break;
+
+                case ConsoleKey.Spacebar: settings.Debug = !settings.Debug; break;
+            }
+
+            SaveSettingsToFile();
+        }
+
+        static void SaveSettingsToFile()
+        {
+            string newJson = settings.ToJson();
+            File.WriteAllText(filePath, newJson);
+        }
+
+        static void ResetOffset()
+        {
+            settings.Offset = new Transform() {
+                Position = new SimpleVector3(1f, 0, 0),
+                Rotation = new SimpleQuaternion(0, 0, 0, 0),
+            };
         }
     }
 }

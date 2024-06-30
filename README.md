@@ -32,6 +32,7 @@ OpenVR SDK is downloaded from their GitHub: https://github.com/ValveSoftware/ope
 # Issues
 
 - overlays sometime take 10 seconds+ to even render (might need to wait for something to initialize?)
+- disconnecting headset causes a freeze
 - facing your head doesn't work sometimes
 
 # Ideas

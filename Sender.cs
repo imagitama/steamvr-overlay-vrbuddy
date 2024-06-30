@@ -11,7 +11,7 @@ namespace VRBuddy
 {
     class Sender
     {
-        public Sender(Settings settings)
+        public Sender(ref Settings settings)
         {
             Console.WriteLine($"Starting sender to {settings.IpAddress}:{settings.OutboundPort}");
 
@@ -22,12 +22,12 @@ namespace VRBuddy
                 while (true)
                 {
                     var trackingData = tracking.GetTrackingData();
-                    var jsonData = JsonSerializer.Serialize(trackingData);
+                    var jsonData = trackingData.ToJson();
                     var bytes = Encoding.UTF8.GetBytes(jsonData);
 
-                    // if (settings.Debug) {
-                    //     Console.WriteLine($"Send");
-                    // }
+                    if (settings.Debug) {
+                        Console.WriteLine(jsonData);
+                    }
 
                     udpClient.Send(bytes, bytes.Length, settings.IpAddress, settings.OutboundPort);
 

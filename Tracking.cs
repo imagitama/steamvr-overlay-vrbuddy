@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using Valve.VR;
+using SharpDX;
 
 namespace VRBuddy
 {
@@ -60,18 +61,18 @@ namespace VRBuddy
 
             Transform transform = new Transform
             {
-                Position = new Vector3
+                Position = new SimpleVector3
                 {
-                    x = matrix.m3,
-                    y = matrix.m7,
-                    z = matrix.m11
+                    X = matrix.m3,
+                    Y = matrix.m7,
+                    Z = matrix.m11
                 },
-                Rotation = new Quaternion
+                Rotation = new SimpleQuaternion
                 {
-                    x = matrix.m0,
-                    y = matrix.m1,
-                    z = matrix.m2,
-                    w = matrix.m9
+                    X = matrix.m0,
+                    Y = matrix.m1,
+                    Z = matrix.m2,
+                    W = matrix.m9
                 }
             };
 

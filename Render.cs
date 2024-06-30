@@ -23,9 +23,8 @@ namespace VRBuddy
         private static Texture_t textureHead;
         private static Texture_t textureLeftHand;
         private static Texture_t textureRightHand;
-        private bool lookAtHead = true;
 
-        public Render(Settings settings)
+        public Render(ref Settings settings)
         {
             if (settings.VirtualPlayspace) {
                 return;
@@ -60,96 +59,74 @@ namespace VRBuddy
             return overlayHandle;
         }
 
-        public void RenderTrackingData(TrackingData trackingData, Vector3 positionOffset, Quaternion rotationOffset)
+        public void RenderTrackingData(TrackingData trackingData, SimpleVector3 positionOffset, SimpleQuaternion rotationOffset, bool lookAtPlayer)
         {
-            var headData = new Pose
-            {
-                Position = new SharpDX.Vector3(trackingData.Hmd.Position.x, trackingData.Hmd.Position.y, trackingData.Hmd.Position.z),
-                Rotation = new SharpDX.Vector3(trackingData.Hmd.Rotation.x, trackingData.Hmd.Rotation.y, trackingData.Hmd.Rotation.z)
-            };
-
-            var leftHandData = new Pose
-            {
-                Position = new SharpDX.Vector3(trackingData.LeftHand.Position.x, trackingData.LeftHand.Position.y, trackingData.LeftHand.Position.z),
-                Rotation = new SharpDX.Vector3(trackingData.LeftHand.Rotation.x, trackingData.LeftHand.Rotation.y, trackingData.LeftHand.Rotation.z)
-            };
-
-            var rightHandData = new Pose
-            {
-                Position = new SharpDX.Vector3(trackingData.RightHand.Position.x, trackingData.RightHand.Position.y, trackingData.RightHand.Position.z),
-                Rotation = new SharpDX.Vector3(trackingData.RightHand.Rotation.x, trackingData.RightHand.Rotation.y, trackingData.RightHand.Rotation.z)
-            };
-
-            SetOverlayTransform(headOverlayHandle, headData, positionOffset, rotationOffset);
-            SetOverlayTransform(leftHandOverlayHandle, leftHandData, positionOffset, rotationOffset);
-            SetOverlayTransform(rightHandOverlayHandle, rightHandData, positionOffset, rotationOffset);
+            SetOverlayTransform(headOverlayHandle, trackingData.Hmd, positionOffset, rotationOffset, lookAtPlayer);
+            SetOverlayTransform(leftHandOverlayHandle, trackingData.LeftHand, positionOffset, rotationOffset, lookAtPlayer);
+            SetOverlayTransform(rightHandOverlayHandle, trackingData.RightHand, positionOffset, rotationOffset, lookAtPlayer);
 
             OpenVR.Overlay.SetOverlayTexture(headOverlayHandle, ref textureHead);
             OpenVR.Overlay.SetOverlayTexture(leftHandOverlayHandle, ref textureLeftHand);
             OpenVR.Overlay.SetOverlayTexture(rightHandOverlayHandle, ref textureRightHand);
         }
 
-        void SetOverlayTransform(ulong overlayHandle, Pose pose, Vector3 positionOffset, Quaternion rotationOffset)
+        void SetOverlayTransform(ulong overlayHandle, Transform pose, SimpleVector3 positionOffset, SimpleQuaternion rotationOffset, bool lookAtPlayer)
         {
-            var headPose = GetHeadPose();
-
-            SharpDX.Vector3 direction = new SharpDX.Vector3(
-                headPose.Position.X - pose.Position.X,
-                headPose.Position.Y - pose.Position.Y,
-                headPose.Position.Z - pose.Position.Z
-            );
-
-            direction.Normalize();
-
-            float yaw = (float)Math.Atan2(direction.X, direction.Z);
-
             var transform = new HmdMatrix34_t();
 
-            transform.m3 = pose.Position.X + positionOffset.x;
-            transform.m7 = pose.Position.Y + positionOffset.y;
-            transform.m11 = pose.Position.Z + positionOffset.z;
+            transform.m3 = pose.Position.X + positionOffset.X;
+            transform.m7 = pose.Position.Y + positionOffset.Y;
+            transform.m11 = pose.Position.Z + positionOffset.Z;
 
-            if (lookAtHead) {
-                transform.m0 = (float)Math.Cos(yaw);
-                transform.m1 = 0;
-                transform.m2 = (float)Math.Sin(yaw);
-                transform.m4 = 0;
-                transform.m5 = 1;
-                transform.m6 = 0;
-                transform.m8 = -(float)Math.Sin(yaw);
-                transform.m9 = 0;
-                transform.m10 = (float)Math.Cos(yaw);
+            Quaternion combinedRotation;
+
+            if (lookAtPlayer)
+            {
+                // TODO
+                combinedRotation = pose.Rotation.ToSharpDXQuaternion();
+            }
+            else
+            {
+                Quaternion poseRotation = Quaternion.RotationYawPitchRoll(pose.Rotation.Y, pose.Rotation.X, pose.Rotation.Z);
+                combinedRotation = Quaternion.Multiply(poseRotation, rotationOffset.ToSharpDXQuaternion());
             }
 
+            var rotationMatrix = Matrix.RotationQuaternion(combinedRotation);
+    
+            transform.m0 = rotationMatrix.M11;
+            transform.m1 = rotationMatrix.M12;
+            transform.m2 = rotationMatrix.M13;
+            transform.m4 = rotationMatrix.M21;
+            transform.m5 = rotationMatrix.M22;
+            transform.m6 = rotationMatrix.M23;
+            transform.m8 = rotationMatrix.M31;
+            transform.m9 = rotationMatrix.M32;
+            transform.m10 = rotationMatrix.M33;
+            
             SetOverlayTransformAbsolute(overlayHandle, ETrackingUniverseOrigin.TrackingUniverseStanding, ref transform);
         }
 
-        public virtual void SetOverlayTransformAbsolute(ulong ulOverlayHandle, ETrackingUniverseOrigin eTrackingOrigin, ref HmdMatrix34_t pmatTrackingOriginToOverlayTransform) {
-            OpenVR.Overlay.SetOverlayTransformAbsolute(ulOverlayHandle, eTrackingOrigin, ref pmatTrackingOriginToOverlayTransform);
-        }
-
-        static Pose GetHeadPose()
+        Quaternion LookRotation(Vector3 direction)
         {
-            var headPose = new Pose();
-            var system = OpenVR.System;
-
-            TrackedDevicePose_t[] trackedDevicePoses = new TrackedDevicePose_t[OpenVR.k_unMaxTrackedDeviceCount];
-            system.GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin.TrackingUniverseStanding, 0, trackedDevicePoses);
-
-            for (int i = 0; i < trackedDevicePoses.Length; i++)
+            float dot = Vector3.Dot(new Vector3(0, 0, 1), direction);
+            if (MathF.Abs(dot - (-1.0f)) < 0.000001f)
             {
-                if (system.GetTrackedDeviceClass((uint)i) == ETrackedDeviceClass.HMD)
-                {
-                    var matrix = trackedDevicePoses[i].mDeviceToAbsoluteTracking;
-
-                    headPose.Position = new SharpDX.Vector3(matrix.m3, matrix.m7, matrix.m11);
-                    headPose.Rotation = new SharpDX.Vector3(matrix.m0, matrix.m5, matrix.m10);
-
-                    break;
-                }
+                return new Quaternion(0, 1, 0, MathF.PI);
+            }
+            if (MathF.Abs(dot - 1.0f) < 0.000001f)
+            {
+                return Quaternion.Identity;
             }
 
-            return headPose;
+            float rotAngle = MathF.Acos(dot);
+            Vector3 rotAxis = Vector3.Cross(new Vector3(0, 0, 1), direction);
+            rotAxis.Normalize();
+            return Quaternion.RotationAxis(rotAxis, rotAngle);
+        }
+
+        // virtual so we can have a virtual playspace later
+        public virtual void SetOverlayTransformAbsolute(ulong ulOverlayHandle, ETrackingUniverseOrigin eTrackingOrigin, ref HmdMatrix34_t pmatTrackingOriginToOverlayTransform) {
+            OpenVR.Overlay.SetOverlayTransformAbsolute(ulOverlayHandle, eTrackingOrigin, ref pmatTrackingOriginToOverlayTransform);
         }
 
         static Texture_t CreateTextureFromPng(string filePath)
@@ -201,12 +178,6 @@ namespace VRBuddy
                 }
             }
         }
-    }
-
-    public class Pose
-    {
-        public SharpDX.Vector3 Position { get; set; }
-        public SharpDX.Vector3 Rotation { get; set; }
     }
 
     public static class RandomExtensions
