@@ -8,7 +8,7 @@ A SteamVR app for displaying the position of your buddy's head and hands in your
 
 Run `VRBuddy.exe` and follow the prompts.
 
-You must port forward and copy your public IP to give it to your friend. Use 127.0.0.1 to see yourself locally.
+You must port forward and copy your public IP to give it to your friend. Use 127.0.0.1 to see yourself locally. Integration with Steam maybe in the future.
 
 Settings are saved to `settings.json`.
 
