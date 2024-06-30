@@ -1,0 +1,26 @@
+{
+  "IpAddress": "127.0.0.1",
+  "InboundPort": 5000,
+  "OutboundPort": 5000,
+  "Scale": 0.5,
+  "HeadScale": 0.5,
+  "HandScale": 0.5,
+  "Offset": {
+    "Position": {
+      "x": 1.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "Rotation": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0,
+      "w": 0.0
+    }
+  },
+  "LookAtPlayer": true,
+  "SendData": false,
+  "ReceiveData": true,
+  "Debug": true,
+  "VirtualPlayspace": false
+}
