@@ -9,6 +9,7 @@ using Valve.VR;
 using Newtonsoft.Json;
 using System.Runtime.Loader;
 using SharpDX;
+using Steamworks;
 
 namespace VRBuddy
 {
@@ -39,7 +40,7 @@ namespace VRBuddy
                 Debug = false
             };
 
-            bool askForSettings = true;
+            bool askNewSettingsQuestions = true;
 
             if (File.Exists(filePath))
             {
@@ -55,15 +56,43 @@ namespace VRBuddy
 
                 ConsoleKeyInfo keyInfo = Console.ReadKey(intercept: true);
 
-                askForSettings = (keyInfo.Key != ConsoleKey.Enter);
+                askNewSettingsQuestions = (keyInfo.Key != ConsoleKey.Enter);
             }
 
-            if (askForSettings) {
-                Console.WriteLine("");
+            var useSteamFriendsList = settings.SteamFriendId != null && settings.SteamFriendId != 0;
 
-                settings.IpAddress = Input.GetInput("Enter your buddies IP address", settings.IpAddress, "127.0.0.1");
-                settings.InboundPort = Input.GetInputInt("Enter the port number to listen", settings.InboundPort, 5000);
-                settings.OutboundPort = Input.GetInputInt("Enter the port number to send", settings.OutboundPort, 5000);
+            if (askNewSettingsQuestions) {
+                Console.WriteLine("");
+                
+                useSteamFriendsList = Input.GetInputBool("Do you want to use your Steam friends list?", true, true);
+
+                if (useSteamFriendsList)
+                {
+                    if (!SteamAPI.Init())
+                    {
+                        Console.WriteLine("Steam API initialization failed");
+                        return;
+                    }
+
+                    Console.WriteLine();
+                    Steam.OutputMyself();
+                    Console.WriteLine();
+
+                    var steamFriendId = Steam.PickFriendId();
+
+                    if (steamFriendId == 0) {
+                        return;
+                    }
+
+                    settings.SteamFriendId = steamFriendId;
+                }
+                else
+                {
+                    settings.IpAddress = Input.GetInput("Enter your buddies IP address", settings.IpAddress, "127.0.0.1");
+                    settings.InboundPort = Input.GetInputInt("Enter the port number to listen", settings.InboundPort, 5000);
+                    settings.OutboundPort = Input.GetInputInt("Enter the port number to send", settings.OutboundPort, 5000);
+                }
+
                 settings.SendData = Input.GetInputBool("Do you want to transmit data?", settings.SendData, true);
                 settings.ReceiveData = Input.GetInputBool("Do you want to receive data?", settings.ReceiveData, true);
                 settings.Scale = Input.GetInputFloat("Enter the initial size (meters) of the head and hands (0.5 = 50cm)", settings.Scale, 0.5f);
@@ -94,8 +123,22 @@ namespace VRBuddy
 
                 Console.WriteLine("New settings saved");
             }
+            else
+            {
+                if (useSteamFriendsList) {
+                    if (!SteamAPI.Init())
+                    {
+                        Console.WriteLine("Steam API initialization failed");
+                        return;
+                    }
+                }
+            }
 
             Console.WriteLine("Starting...");
+
+            if (useSteamFriendsList) {
+                AppDomain.CurrentDomain.ProcessExit += (s, e) => SteamAPI.Shutdown();
+            }
 
             if (!settings.VirtualPlayspace) {
                 EVRInitError error = EVRInitError.None;
@@ -124,8 +167,8 @@ namespace VRBuddy
 
             var render = new Render(ref settings);
 
-            var senderTask = settings.SendData ? Task.Run(() => StartSender(ref settings)) : Task.CompletedTask;
-            var receiverTask = settings.ReceiveData ? Task.Run(() => StartReceiver(ref settings, ref render)) : Task.CompletedTask;
+            var senderTask = settings.SendData ? useSteamFriendsList ? Task.Run(() => StartSenderSteam(ref settings)) : Task.Run(() => StartSender(ref settings)) : Task.CompletedTask;
+            var receiverTask = settings.ReceiveData ? useSteamFriendsList ? Task.Run(() => StartReceiverSteam(ref settings, ref render)) : Task.Run(() => StartReceiver(ref settings, ref render)) : Task.CompletedTask;
             var inputTask = HandleUserInput();
 
             if (settings.VirtualPlayspace) {
@@ -140,28 +183,45 @@ namespace VRBuddy
 
         static void OutputSettings(Settings settings)
         {
-            Console.WriteLine($"  IP Address: {settings.IpAddress}");
-            Console.WriteLine($"  In Port: {settings.InboundPort}");
-            Console.WriteLine($"  Out Port: {settings.OutboundPort}");
+            if (settings.SteamFriendId != null && settings.SteamFriendId != 0)
+            {
+                Console.WriteLine($"  Steam friend ID: {settings.SteamFriendId}");
+            }
+            else
+            {
+                Console.WriteLine($"  IP Address: {settings.IpAddress}");
+                Console.WriteLine($"  In Port: {settings.InboundPort}");
+                Console.WriteLine($"  Out Port: {settings.OutboundPort}");
+            }
             Console.WriteLine($"  Global Scale: {settings.Scale}m");
             Console.WriteLine($"  Head Scale: {settings.HeadScale}x");
             Console.WriteLine($"  Hand Scale: {settings.HandScale}x");
-            Console.WriteLine($"  Render Offset Position: X={settings.Offset.Position.X}, Y={settings.Offset.Position.Y}, Z={settings.Offset.Position.Z}");
-            Console.WriteLine($"  Render Offset Rotation: X={settings.Offset.Rotation.X}, Y={settings.Offset.Rotation.Y}, Z={settings.Offset.Rotation.Z}");
             Console.WriteLine($"  Sending: {(settings.SendData ? "Yes" : "No")}");
             Console.WriteLine($"  Receiving: {(settings.ReceiveData ? "Yes" : "No")}");
-            Console.WriteLine($"  Look At You: {(settings.LookAtPlayer ? "Yes" : "No")}");
+            // Console.WriteLine($"  Look At You: {(settings.LookAtPlayer ? "Yes" : "No")}");
+        }
+
+        static void StartSenderSteam(ref Settings settings)
+        {
+            Console.WriteLine("Starting sender via Steam...");
+            Steam.StartSending(ref settings);
+        }
+
+        static void StartReceiverSteam(ref Settings settings, ref Render render)
+        {
+            Console.WriteLine("Starting receiver via Steam...");
+            Steam.StartListening(ref settings, ref render);
         }
 
         static void StartSender(ref Settings settings)
         {
-            Console.WriteLine("Starting to send data...");
+            Console.WriteLine("Starting sender...");
             var sender = new Sender(ref settings);
         }
 
         static void StartReceiver(ref Settings settings, ref Render render)
         {
-            Console.WriteLine("Starting to receive data...");
+            Console.WriteLine("Starting receiver...");
             var receiver = new Receiver(ref settings, ref render);
         }
 

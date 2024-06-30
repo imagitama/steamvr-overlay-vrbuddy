@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 namespace VRBuddy
 {
     public class Settings {
+        public ulong SteamFriendId { get; set; }
         public string IpAddress { get; set; }
         public int InboundPort { get; set; }
         public int OutboundPort { get; set; }
@@ -22,6 +23,7 @@ namespace VRBuddy
         {
             var jsonData = new
             {
+                SteamFriendId = SteamFriendId,
                 IpAddress = IpAddress,
                 InboundPort = InboundPort,
                 OutboundPort = OutboundPort,
